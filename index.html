@@ -200,6 +200,45 @@
         .input-icon-group input { width: 100%; padding: 12px 14px 12px 40px; border: 1px solid var(--border); border-radius: var(--radius-md); font-size: 14px; background: #f8fbfb; transition: var(--transition); }
         .input-icon-group input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 4px rgba(15, 118, 110, 0.14); background: #fff; }
         .input-icon-group.with-qr input { padding-right: 54px; }
+        .history-filter-bar {
+            display: flex;
+            gap: 10px;
+            align-items: end;
+            flex-wrap: wrap;
+            margin-bottom: 12px;
+            padding: 10px;
+        }
+        .history-filter-field {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            min-width: 180px;
+        }
+        .history-filter-field label {
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--text-muted);
+        }
+        .history-filter-field input {
+            padding: 10px 12px;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            background: #f8fbfb;
+            color: var(--text-main);
+        }
+        .history-filter-actions {
+            display: flex;
+            gap: 8px;
+            margin-left: auto;
+        }
+        .btn-filter-clear {
+            background: #eef3f3;
+            color: var(--text-main);
+            border: 1px solid var(--border);
+        }
+        .btn-filter-clear:hover {
+            background: #dfeaea;
+        }
 
         /* --- TABLES --- */
         .table-container { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius-md); background: #fff; }
@@ -261,6 +300,7 @@
             .inventory-hero { flex-direction: column; align-items: stretch; padding: 16px; }
             .inventory-hero-title { font-size: 19px; }
             .inventory-search-wrap { min-width: 100%; max-width: 100%; }
+            .history-filter-actions { margin-left: 0; }
         }
 
         /* --- TOAST POPUP --- */
@@ -343,7 +383,7 @@
     <nav class="sidebar">
         <div class="sidebar-brand">
             <img
-                src="./geongang.png"
+                src="./assets/logo-geongang.png"
                 alt="Logo Geongang"
                 class="sidebar-logo"
             >
@@ -452,6 +492,21 @@
 
         <section id="sec-historial" class="tab-section">
             <div class="card" style="padding: 10px;">
+                <div class="history-filter-bar">
+                    <div class="history-filter-field">
+                        <label for="historial-fecha-desde">Desde</label>
+                        <input type="date" id="historial-fecha-desde" oninput="aplicarFiltrosHistorial()">
+                    </div>
+                    <div class="history-filter-field">
+                        <label for="historial-fecha-hasta">Hasta</label>
+                        <input type="date" id="historial-fecha-hasta" oninput="aplicarFiltrosHistorial()">
+                    </div>
+                    <div class="history-filter-actions">
+                        <button class="btn btn-secondary btn-filter-clear" type="button" onclick="limpiarFiltrosHistorial()">
+                            <i class="fa-solid fa-eraser"></i> Limpiar
+                        </button>
+                    </div>
+                </div>
                 <div class="table-container">
                     <table>
                         <thead>
@@ -476,6 +531,7 @@
         const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxmE607KxwfqGVUgHm1Y7ZS1UzquSAF6V7P8Cz8fCGPe2YgmRVuZlzUqoK-7lK0OxwJ/exec";
 
         let listadoProductosLocal = [];
+        let historialVentasLocal = [];
         const qtyInputByProductId = {};
         let accionConfirmadaPendiente = null;
         let temporizadorSincronizacion = null;
@@ -521,7 +577,7 @@
             element.classList.add("active");
 
             const titulos = {
-                inventario: ["Inventario", "Tienda"],
+                inventario: ["Inventario", "Tienda Geongang"],
                 agregar: ["Registrar Producto", "Inyeccion de nuevas referencias al stock central."],
                 historial: ["Historial de Transacciones", "Libro de ventas automatizado de salidas y cobros."]
             };
@@ -536,8 +592,9 @@
                 const response = await fetch(WEB_APP_URL);
                 const dataData = await response.json();
                 listadoProductosLocal = (dataData.productos || []).map(normalizarProducto);
+                historialVentasLocal = dataData.historial || [];
                 renderizarProductos(listadoProductosLocal);
-                renderizarHistorial(dataData.historial || []);
+                aplicarFiltrosHistorial();
             } catch (error) {
                 console.error("Error al sincronizar:", error);
                 mostrarToast("No fue posible sincronizar con Google Sheets.", "error");
@@ -684,6 +741,39 @@
             });
 
             tbody.innerHTML = filas.join("");
+        }
+
+        function obtenerFechaOperacion(venta) {
+            const fechaBruta = venta.fecha || venta.FECHA || "";
+            if (!fechaBruta) return null;
+            const fecha = new Date(fechaBruta);
+            if (Number.isNaN(fecha.getTime())) return null;
+            return fecha;
+        }
+
+        function aplicarFiltrosHistorial() {
+            const inputDesde = document.getElementById("historial-fecha-desde");
+            const inputHasta = document.getElementById("historial-fecha-hasta");
+            const desde = inputDesde?.value ? new Date(`${inputDesde.value}T00:00:00`) : null;
+            const hasta = inputHasta?.value ? new Date(`${inputHasta.value}T23:59:59`) : null;
+
+            const filtrado = historialVentasLocal.filter(venta => {
+                const fechaOperacion = obtenerFechaOperacion(venta);
+                if (!fechaOperacion) return !desde && !hasta;
+                if (desde && fechaOperacion < desde) return false;
+                if (hasta && fechaOperacion > hasta) return false;
+                return true;
+            });
+
+            renderizarHistorial(filtrado);
+        }
+
+        function limpiarFiltrosHistorial() {
+            const inputDesde = document.getElementById("historial-fecha-desde");
+            const inputHasta = document.getElementById("historial-fecha-hasta");
+            if (inputDesde) inputDesde.value = "";
+            if (inputHasta) inputHasta.value = "";
+            aplicarFiltrosHistorial();
         }
 
         function filtrarProductos() {
