@@ -6,6 +6,7 @@
     <title>GEONGANG TIENDA</title>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
     
     <style>
         /* --- MODAL POP-UP MODERNO --- */
@@ -166,8 +167,29 @@
 
         .search-bar-container { position: relative; max-width: 450px; width: 100%; }
         .search-bar-container i { position: absolute; left: 16px; top: 50%; transform: translateY(-50%); color: var(--text-muted); font-size: 16px; }
-        .search-input { width: 100%; padding: 12px 16px 12px 46px; border: 1px solid var(--border); border-radius: var(--radius-md); font-size: 14px; transition: var(--transition); background: #fcfefe; }
+        .search-input { width: 100%; padding: 12px 56px 12px 46px; border: 1px solid var(--border); border-radius: var(--radius-md); font-size: 14px; transition: var(--transition); background: #fcfefe; }
         .search-input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 4px rgba(15, 118, 110, 0.14); }
+        .btn-qr-inline {
+            position: absolute;
+            right: 8px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 36px;
+            height: 36px;
+            border: 1px solid #cde4df;
+            border-radius: 10px;
+            background: #eef7f5;
+            color: var(--primary);
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            transition: var(--transition);
+        }
+        .btn-qr-inline:hover {
+            background: #dff0ec;
+            border-color: #b7ddd6;
+        }
 
         /* --- FORMS --- */
         .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 20px; margin-bottom: 24px; }
@@ -177,6 +199,7 @@
         .input-icon-group i { position: absolute; left: 14px; color: var(--text-muted); font-size: 14px; }
         .input-icon-group input { width: 100%; padding: 12px 14px 12px 40px; border: 1px solid var(--border); border-radius: var(--radius-md); font-size: 14px; background: #f8fbfb; transition: var(--transition); }
         .input-icon-group input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 4px rgba(15, 118, 110, 0.14); background: #fff; }
+        .input-icon-group.with-qr input { padding-right: 54px; }
 
         /* --- TABLES --- */
         .table-container { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius-md); background: #fff; }
@@ -277,6 +300,36 @@
         .toast.closing {
             animation: toastOut 0.2s ease forwards;
         }
+        .qr-modal-card {
+            max-width: 430px;
+            text-align: left;
+            padding: 20px;
+        }
+        .qr-title {
+            font-size: 18px;
+            font-weight: 800;
+            margin-bottom: 6px;
+            color: var(--text-main);
+        }
+        .qr-subtitle {
+            font-size: 13px;
+            color: var(--text-muted);
+            margin-bottom: 14px;
+        }
+        #qr-reader {
+            width: 100%;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            overflow: hidden;
+            min-height: 260px;
+            background: #0b1a1f;
+        }
+        .qr-status {
+            margin-top: 10px;
+            font-size: 12px;
+            color: var(--text-muted);
+            min-height: 18px;
+        }
         @keyframes toastIn {
             to { transform: translateX(0); opacity: 1; }
         }
@@ -338,6 +391,9 @@
                     <div class="search-bar-container">
                         <i class="fa-solid fa-magnifying-glass"></i>
                         <input type="text" id="buscador" class="search-input" placeholder="Buscar por descripción o código..." oninput="filtrarProductos()">
+                        <button class="btn-qr-inline" onclick="abrirEscanerQR('buscador')" title="Escanear QR para buscar">
+                            <i class="fa-solid fa-qrcode"></i>
+                        </button>
                     </div>
                 </div>
             </div>
@@ -367,7 +423,13 @@
                 <div class="form-grid">
                     <div class="form-field">
                         <label>Código Identificador (Opcional)</label>
-                        <div class="input-icon-group"><i class="fa-solid fa-barcode"></i><input type="text" id="add-id" placeholder="Ej: PROD01"></div>
+                        <div class="input-icon-group with-qr">
+                            <i class="fa-solid fa-barcode"></i>
+                            <input type="text" id="add-id" placeholder="Ej: PROD01">
+                            <button class="btn-qr-inline" onclick="abrirEscanerQR('add-id')" title="Escanear QR para ID">
+                                <i class="fa-solid fa-qrcode"></i>
+                            </button>
+                        </div>
                     </div>
                     <div class="form-field">
                         <label>Nombre del Artículo</label>
@@ -418,6 +480,9 @@
         let accionConfirmadaPendiente = null;
         let temporizadorSincronizacion = null;
         let sincronizacionEnCurso = false;
+        let qrScannerInstance = null;
+        let qrTargetInputId = null;
+        let qrLecturaCompletada = false;
         const formatoMonedaCOP = new Intl.NumberFormat("es-CO", {
             style: "currency",
             currency: "COP",
@@ -795,6 +860,90 @@
             }, 2400);
         }
 
+        function esDispositivoMovil() {
+            return /Android|iPhone|iPad|iPod|IEMobile|Opera Mini/i.test(navigator.userAgent);
+        }
+
+        async function abrirEscanerQR(targetInputId) {
+            if (!window.Html5Qrcode) {
+                mostrarToast("No se pudo cargar el lector QR.", "error");
+                return;
+            }
+            qrTargetInputId = targetInputId;
+            qrLecturaCompletada = false;
+            document.getElementById("qr-modal").classList.add("active");
+            document.getElementById("qr-status").textContent = esDispositivoMovil()
+                ? "Apunta la camara al codigo QR."
+                : "Activa la camara y acerca el codigo QR.";
+            await iniciarEscanerQR();
+        }
+
+        async function iniciarEscanerQR() {
+            const qrStatus = document.getElementById("qr-status");
+            try {
+                if (window.location.protocol !== "https:" && window.location.hostname !== "localhost") {
+                    throw new Error("La camara requiere HTTPS o localhost.");
+                }
+
+                await detenerEscanerQR();
+                qrScannerInstance = new Html5Qrcode("qr-reader");
+                const config = {
+                    fps: 10,
+                    qrbox: { width: 220, height: 220 },
+                    aspectRatio: 1
+                };
+
+                let cameraConfig = { facingMode: "environment" };
+                if (!esDispositivoMovil()) {
+                    const cameras = await Html5Qrcode.getCameras();
+                    if (cameras?.length) cameraConfig = { deviceId: { exact: cameras[0].id } };
+                }
+
+                await qrScannerInstance.start(
+                    cameraConfig,
+                    config,
+                    onQrLeidoExitoso,
+                    () => {}
+                );
+            } catch (error) {
+                console.error("Error QR:", error);
+                if (qrStatus) qrStatus.textContent = "No fue posible activar la camara.";
+                mostrarToast("No se pudo iniciar el escaner QR. Verifica permisos de camara.", "error");
+            }
+        }
+
+        function onQrLeidoExitoso(texto) {
+            if (qrLecturaCompletada) return;
+            qrLecturaCompletada = true;
+            const inputObjetivo = document.getElementById(qrTargetInputId || "");
+            if (inputObjetivo) {
+                inputObjetivo.value = texto;
+                inputObjetivo.dispatchEvent(new Event("input", { bubbles: true }));
+            }
+            mostrarToast("Codigo QR leido correctamente.", "success");
+            cerrarEscanerQR();
+        }
+
+        async function detenerEscanerQR() {
+            if (!qrScannerInstance) return;
+            try {
+                await qrScannerInstance.stop();
+            } catch (_) {}
+            try {
+                qrScannerInstance.clear();
+            } catch (_) {}
+            qrScannerInstance = null;
+        }
+
+        async function cerrarEscanerQR() {
+            document.getElementById("qr-modal").classList.remove("active");
+            await detenerEscanerQR();
+            qrTargetInputId = null;
+            qrLecturaCompletada = false;
+            const qrStatus = document.getElementById("qr-status");
+            if (qrStatus) qrStatus.textContent = "";
+        }
+
         function enviarDatosPorFormularioOculto(datos) {
             aplicarCambioOptimista(datos);
 
@@ -846,6 +995,17 @@
             <div class="modal-actions">
                 <button class="btn btn-secondary" id="btn-cancelar-modal" onclick="cerrarPopUpVenta()">Cancelar</button>
                 <button class="btn btn-primary" id="btn-confirmar-modal" onclick="confirmarAccionModal()">Procesar venta</button>
+            </div>
+        </div>
+    </div>
+    <div id="qr-modal" class="modal-overlay">
+        <div class="modal-card qr-modal-card">
+            <div class="qr-title">Escanear codigo QR</div>
+            <p class="qr-subtitle">Usa la camara para buscar o completar el ID del producto.</p>
+            <div id="qr-reader"></div>
+            <div id="qr-status" class="qr-status"></div>
+            <div class="modal-actions" style="margin-top: 14px; justify-content: flex-end;">
+                <button class="btn btn-secondary" onclick="cerrarEscanerQR()">Cerrar</button>
             </div>
         </div>
     </div>
